@@ -91,6 +91,13 @@ export type UserBadge = {
   activity_log_id: string | null;
 };
 
+export type Follow = {
+  id: string;
+  follower_id: string;
+  followed_id: string;
+  created_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -141,8 +148,19 @@ export type Database = {
         Update: Partial<UserBadge>;
         Relationships: never[];
       };
+      follows: {
+        Row: Follow;
+        Insert: Partial<Follow> & { follower_id: string; followed_id: string };
+        Update: Partial<Follow>;
+        Relationships: never[];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      weekly_distance_leaderboard: {
+        Args: Record<string, never>;
+        Returns: { user_id: string; weekly_distance_m: number }[];
+      };
+    };
   };
 };
