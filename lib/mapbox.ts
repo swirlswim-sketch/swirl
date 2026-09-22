@@ -1,6 +1,6 @@
 export const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN!;
 
-export const MAPBOX_STYLE = "mapbox://styles/mapbox/light-v11";
+export const MAPBOX_STYLE = "mapbox://styles/mapbox/dark-v11";
 
 export const SWIRL_BLUE = "#0057FF";
 

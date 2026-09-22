@@ -3,7 +3,13 @@ export type BadgeType = "checkpoint" | "streak" | "distance" | "completion" | "s
 export type UnitsPreference = "km" | "miles";
 export type ActivitySource = "manual" | "apple_health" | "strava" | "garmin";
 
-export interface Profile {
+// Row shapes are plain `type` object literals, not `interface`s: Supabase's
+// generic client checks `Row extends Record<string, unknown>` when resolving
+// table types from the Database generic, and TypeScript only recognizes that
+// relation for object-literal types — an `interface` (even with identical
+// members) fails the check and silently collapses every table to `never`.
+
+export type Profile = {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
@@ -15,9 +21,9 @@ export interface Profile {
   is_premium: boolean;
   units_preference: UnitsPreference;
   created_at: string;
-}
+};
 
-export interface Route {
+export type Route = {
   id: string;
   name: string;
   description: string | null;
@@ -29,9 +35,9 @@ export interface Route {
   tags: string[] | null;
   is_active: boolean;
   created_at: string;
-}
+};
 
-export interface RouteCheckpoint {
+export type RouteCheckpoint = {
   id: string;
   route_id: string;
   name: string;
@@ -41,9 +47,9 @@ export interface RouteCheckpoint {
   lng: number | null;
   badge_id: string | null;
   order_index: number;
-}
+};
 
-export interface UserRoute {
+export type UserRoute = {
   id: string;
   user_id: string;
   route_id: string | null;
@@ -53,9 +59,9 @@ export interface UserRoute {
   completed_at: string | null;
   current_distance_m: number;
   is_active: boolean;
-}
+};
 
-export interface ActivityLog {
+export type ActivityLog = {
   id: string;
   user_id: string;
   user_route_id: string | null;
@@ -66,35 +72,77 @@ export interface ActivityLog {
   source: ActivitySource;
   notes: string | null;
   xp_earned: number | null;
-}
+};
 
-export interface Badge {
+export type Badge = {
   id: string;
   name: string;
   description: string | null;
   image_url: string | null;
   badge_type: BadgeType;
   threshold_value: number | null;
-}
+};
 
-export interface UserBadge {
+export type UserBadge = {
   id: string;
   user_id: string;
   badge_id: string;
   earned_at: string;
   activity_log_id: string | null;
-}
+};
 
-export interface Database {
+export type Database = {
   public: {
     Tables: {
-      profiles: { Row: Profile; Insert: Partial<Profile> & { id: string }; Update: Partial<Profile> };
-      routes: { Row: Route; Insert: Partial<Route>; Update: Partial<Route> };
-      route_checkpoints: { Row: RouteCheckpoint; Insert: Partial<RouteCheckpoint>; Update: Partial<RouteCheckpoint> };
-      user_routes: { Row: UserRoute; Insert: Partial<UserRoute>; Update: Partial<UserRoute> };
-      activity_logs: { Row: ActivityLog; Insert: Partial<ActivityLog>; Update: Partial<ActivityLog> };
-      badges: { Row: Badge; Insert: Partial<Badge>; Update: Partial<Badge> };
-      user_badges: { Row: UserBadge; Insert: Partial<UserBadge>; Update: Partial<UserBadge> };
+      profiles: {
+        Row: Profile;
+        Insert: Partial<Profile> & { id: string };
+        Update: Partial<Profile>;
+        Relationships: never[];
+      };
+      routes: {
+        Row: Route;
+        Insert: Partial<Route> & { name: string; total_distance_m: number };
+        Update: Partial<Route>;
+        Relationships: never[];
+      };
+      route_checkpoints: {
+        Row: RouteCheckpoint;
+        Insert: Partial<RouteCheckpoint> & {
+          route_id: string;
+          name: string;
+          distance_from_start_m: number;
+          order_index: number;
+        };
+        Update: Partial<RouteCheckpoint>;
+        Relationships: never[];
+      };
+      user_routes: {
+        Row: UserRoute;
+        Insert: Partial<UserRoute> & { user_id: string };
+        Update: Partial<UserRoute>;
+        Relationships: never[];
+      };
+      activity_logs: {
+        Row: ActivityLog;
+        Insert: Partial<ActivityLog> & { user_id: string; distance_m: number };
+        Update: Partial<ActivityLog>;
+        Relationships: never[];
+      };
+      badges: {
+        Row: Badge;
+        Insert: Partial<Badge> & { name: string; badge_type: BadgeType };
+        Update: Partial<Badge>;
+        Relationships: never[];
+      };
+      user_badges: {
+        Row: UserBadge;
+        Insert: Partial<UserBadge> & { user_id: string; badge_id: string };
+        Update: Partial<UserBadge>;
+        Relationships: never[];
+      };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
   };
-}
+};
