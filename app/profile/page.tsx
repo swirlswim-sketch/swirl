@@ -153,7 +153,7 @@ export default function ProfilePage() {
   const earnedBadgeIds = new Set(userBadges.map((ub) => ub.badge_id));
 
   return (
-    <main className="min-h-screen bg-surface pb-16">
+    <main className="min-h-screen bg-surface pb-24">
       <div className="flex flex-col items-center gap-2 px-6 pt-10 text-center">
         <Avatar displayName={profile.display_name} avatarUrl={profile.avatar_url} size={88} />
         <h1 className="font-display text-[20px] font-semibold text-deep">{profile.display_name ?? "Swimmer"}</h1>

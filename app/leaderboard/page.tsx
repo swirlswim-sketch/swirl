@@ -148,7 +148,7 @@ export default function LeaderboardPage() {
   );
 
   return (
-    <main className="min-h-screen bg-surface pb-16">
+    <main className="min-h-screen bg-surface pb-24">
       <div className="px-4 pt-6">
         <div className="flex rounded-pill bg-white p-1 shadow-card">
           {(["global", "friends"] as const).map((t) => (

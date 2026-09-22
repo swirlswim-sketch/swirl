@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import AppChrome from "@/components/layout/AppChrome";
+import PwaRegister from "@/components/PwaRegister";
 
 export const metadata: Metadata = {
   title: "Swirl",
@@ -20,7 +22,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased font-body">{children}</body>
+      <body className="antialiased font-body">
+        <PwaRegister />
+        <AppChrome>{children}</AppChrome>
+      </body>
     </html>
   );
 }
