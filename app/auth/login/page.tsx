@@ -6,7 +6,16 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Button from "@/components/ui/Button";
 
-const PENDING_ROUTE_KEY = "swirl_pending_route_id";
+const PENDING_ROUTE_KEY = "swirl_pending_route";
+
+function readPendingRoute(): { email: string; routeId: string } | null {
+  try {
+    const raw = localStorage.getItem(PENDING_ROUTE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,14 +39,24 @@ export default function LoginPage() {
       return;
     }
 
-    const pendingRouteId = localStorage.getItem(PENDING_ROUTE_KEY);
-    if (pendingRouteId && data.user) {
-      await supabase.from("user_routes").insert({
-        user_id: data.user.id,
-        route_id: pendingRouteId,
-        current_distance_m: 0,
-        is_active: true,
-      });
+    const pending = readPendingRoute();
+    if (pending && pending.email === email && data.user) {
+      const { data: existingActive } = await supabase
+        .from("user_routes")
+        .select("id")
+        .eq("user_id", data.user.id)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (!existingActive) {
+        await supabase.from("user_routes").insert({
+          user_id: data.user.id,
+          route_id: pending.routeId,
+          current_distance_m: 0,
+          is_active: true,
+        });
+      }
       localStorage.removeItem(PENDING_ROUTE_KEY);
     }
 

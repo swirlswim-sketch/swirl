@@ -1,4 +1,4 @@
-import type { Badge } from "@/types/database";
+import type { Badge, RouteCheckpoint } from "@/types/database";
 
 /**
  * Distance and streak badges use `threshold_value` as a simple crossing
@@ -30,6 +30,17 @@ export function getNewlyEarnedStreakBadges(
     const threshold = badge.threshold_value ?? 0;
     return previousStreakDays < threshold && newStreakDays >= threshold;
   });
+}
+
+/** Checkpoints crossed by this activity: distance moved from below to at-or-above their marker. */
+export function getNewlyPassedCheckpoints(
+  checkpoints: RouteCheckpoint[],
+  previousDistanceM: number,
+  newDistanceM: number
+): RouteCheckpoint[] {
+  return checkpoints
+    .filter((cp) => previousDistanceM < cp.distance_from_start_m && newDistanceM >= cp.distance_from_start_m)
+    .sort((a, b) => a.order_index - b.order_index);
 }
 
 /** Distance badges are also used as a static "collection" — including unearned ones with their requirement. */

@@ -9,7 +9,7 @@ import Button from "@/components/ui/Button";
 import MapboxRoute from "@/components/map/MapboxRoute";
 import type { Badge, Route, RouteCheckpoint } from "@/types/database";
 
-const PENDING_ROUTE_KEY = "swirl_pending_route_id";
+const PENDING_ROUTE_KEY = "swirl_pending_route";
 
 const DIFFICULTY_LABEL: Record<string, string> = {
   shallow: "Shallow",
@@ -121,8 +121,10 @@ export default function OnboardingPage() {
     }
 
     if (!data.session || !data.user) {
-      // Email confirmation required: stash the route choice so login can finish setup.
-      if (selectedRouteId) localStorage.setItem(PENDING_ROUTE_KEY, selectedRouteId);
+      // Email confirmation required: stash the route choice, scoped to this email, so login can finish setup.
+      if (selectedRouteId) {
+        localStorage.setItem(PENDING_ROUTE_KEY, JSON.stringify({ email, routeId: selectedRouteId }));
+      }
       setNeedsConfirmation(true);
       setSubmitting(false);
       return;

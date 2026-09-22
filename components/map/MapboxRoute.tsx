@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Feature, Geometry, LineString } from "geojson";
-import { MAPBOX_STYLE, MAPBOX_TOKEN, SWIRL_BLUE } from "@/lib/mapbox";
+import { MAPBOX_STYLE, MAPBOX_TOKEN, SWIRL_BLUE, positionAlongLine } from "@/lib/mapbox";
+import CheckpointMarker from "@/components/map/CheckpointMarker";
+import UserPin from "@/components/map/UserPin";
 import type { RouteCheckpoint } from "@/types/database";
 
 const MIST = "#e2e8f2";
+const USER_POSITION_ZOOM = 10.5;
+const POSITION_ANIMATION_MS = 1200;
 
 /** Roughly Atlantic-Europe: used as the onboarding map's resting view before a route is picked. */
 const DEFAULT_BOUNDS: mapboxgl.LngLatBoundsLike = [
@@ -24,6 +29,10 @@ interface MapboxRouteProps {
   routes: MapboxRouteData[];
   selectedRouteId?: string | null;
   checkpoints?: RouteCheckpoint[];
+  /** When set, checkpoint markers render locked/unlocked based on this distance instead of a plain dot. */
+  currentDistanceM?: number;
+  /** 0-1 along the selected route's line. Renders a UserPin and animates smoothly between updates. */
+  userPositionFraction?: number | null;
   /** Tighter fit + longer padding, used when a single route fills the screen (onboarding screen 2). */
   tight?: boolean;
   className?: string;
@@ -37,16 +46,30 @@ function lineBounds(line: LineString): mapboxgl.LngLatBounds {
   return bounds;
 }
 
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 export default function MapboxRoute({
   routes,
   selectedRouteId = null,
   checkpoints = [],
+  currentDistanceM,
+  userPositionFraction = null,
   tight = false,
   className,
 }: MapboxRouteProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const markersRef = useRef<{ marker: mapboxgl.Marker; root: Root }[]>([]);
+  const userMarkerRef = useRef<{ marker: mapboxgl.Marker; root: Root } | null>(null);
+  const displayedFractionRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const hasCenteredOnUserRef = useRef(false);
   const loadedRef = useRef(false);
 
   useEffect(() => {
@@ -85,16 +108,30 @@ export default function MapboxRoute({
       syncStyle();
       syncBounds();
       syncMarkers();
+      syncUserMarker(true);
     });
 
     return () => {
-      markersRef.current.forEach((m) => m.remove());
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      markersRef.current.forEach(({ marker, root }) => {
+        marker.remove();
+        root.unmount();
+      });
+      if (userMarkerRef.current) {
+        userMarkerRef.current.marker.remove();
+        userMarkerRef.current.root.unmount();
+      }
       map.remove();
       mapRef.current = null;
       loadedRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function selectedLine(): LineString | null {
+    const selected = routes.find((r) => r.id === selectedRouteId && r.geojson?.type === "LineString");
+    return selected?.geojson?.type === "LineString" ? selected.geojson : null;
+  }
 
   function syncData() {
     const map = mapRef.current;
@@ -134,14 +171,12 @@ export default function MapboxRoute({
   function syncBounds() {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
+    // The dashboard centers on the user's position instead (see syncUserMarker's initial flyTo).
+    if (userPositionFraction != null) return;
 
-    const selected = routes.find((r) => r.id === selectedRouteId && r.geojson?.type === "LineString");
-    if (selected?.geojson?.type === "LineString") {
-      map.fitBounds(lineBounds(selected.geojson), {
-        padding: tight ? 64 : 80,
-        duration: 1200,
-        essential: true,
-      });
+    const line = selectedLine();
+    if (line) {
+      map.fitBounds(lineBounds(line), { padding: tight ? 64 : 80, duration: 1200, essential: true });
     } else {
       map.fitBounds(DEFAULT_BOUNDS, { padding: 40, duration: 1200, essential: true });
     }
@@ -151,19 +186,76 @@ export default function MapboxRoute({
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
 
-    markersRef.current.forEach((m) => m.remove());
+    markersRef.current.forEach(({ marker, root }) => {
+      marker.remove();
+      root.unmount();
+    });
     markersRef.current = checkpoints
       .filter((c) => c.lat != null && c.lng != null)
       .map((c) => {
-        const el = document.createElement("div");
-        el.style.width = "14px";
-        el.style.height = "14px";
-        el.style.borderRadius = "50%";
-        el.style.background = SWIRL_BLUE;
-        el.style.border = "2px solid white";
-        el.style.boxShadow = "0 2px 12px rgba(0,0,0,0.08)";
-        return new mapboxgl.Marker({ element: el }).setLngLat([c.lng!, c.lat!]).addTo(map);
+        const container = document.createElement("div");
+        const root = createRoot(container);
+        const unlocked = currentDistanceM != null ? c.distance_from_start_m <= currentDistanceM : true;
+        root.render(<CheckpointMarker unlocked={unlocked} />);
+        const marker = new mapboxgl.Marker({ element: container }).setLngLat([c.lng!, c.lat!]).addTo(map);
+        return { marker, root };
       });
+  }
+
+  function syncUserMarker(isInitial: boolean) {
+    const map = mapRef.current;
+    const line = selectedLine();
+    if (!map || !loadedRef.current || !line || userPositionFraction == null) return;
+
+    if (!userMarkerRef.current) {
+      const container = document.createElement("div");
+      const root = createRoot(container);
+      root.render(<UserPin />);
+      const marker = new mapboxgl.Marker({ element: container }).setLngLat(positionAlongLine(
+        line.coordinates as [number, number][],
+        userPositionFraction
+      ));
+      marker.addTo(map);
+      userMarkerRef.current = { marker, root };
+      displayedFractionRef.current = userPositionFraction;
+    }
+
+    if (isInitial && !hasCenteredOnUserRef.current) {
+      hasCenteredOnUserRef.current = true;
+      const pos = positionAlongLine(line.coordinates as [number, number][], userPositionFraction);
+      map.flyTo({ center: pos, zoom: USER_POSITION_ZOOM, duration: 1200, essential: true });
+      return;
+    }
+
+    const from = displayedFractionRef.current ?? userPositionFraction;
+    const to = userPositionFraction;
+    if (from === to) return;
+
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+
+    if (prefersReducedMotion()) {
+      const pos = positionAlongLine(line.coordinates as [number, number][], to);
+      userMarkerRef.current.marker.setLngLat(pos);
+      displayedFractionRef.current = to;
+      map.panTo(pos, { duration: 0 });
+      return;
+    }
+
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min((now - start) / POSITION_ANIMATION_MS, 1);
+      const eased = easeOutCubic(t);
+      const fraction = from + (to - from) * eased;
+      const pos = positionAlongLine(line.coordinates as [number, number][], fraction);
+      userMarkerRef.current?.marker.setLngLat(pos);
+      if (t < 1) {
+        animationFrameRef.current = requestAnimationFrame(step);
+      } else {
+        displayedFractionRef.current = to;
+        map.panTo(pos, { duration: 400 });
+      }
+    };
+    animationFrameRef.current = requestAnimationFrame(step);
   }
 
   useEffect(() => {
@@ -180,7 +272,12 @@ export default function MapboxRoute({
   useEffect(() => {
     syncMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkpoints]);
+  }, [checkpoints, currentDistanceM]);
+
+  useEffect(() => {
+    syncUserMarker(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userPositionFraction]);
 
   // mapbox-gl.css sets `.mapboxgl-map { position: relative }`, which — depending on CSS import
   // order — can outrank the `absolute` utility class callers pass in and collapse this to 0 height.
