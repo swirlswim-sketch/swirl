@@ -233,6 +233,14 @@ export default function RoutesPage() {
               {ACTIVITY_FILTERS.find((f) => f.value === activityFilter)?.label} routes are coming soon.
             </p>
           </div>
+        ) : filteredRoutes.length === 0 && search.trim().length > 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-card bg-white p-8 text-center">
+            <p className="text-[15px] text-slate">No routes match &ldquo;{search}&rdquo;.</p>
+            <p className="text-[13px] text-slate">
+              Not in our list yet? Search for the real place instead and swim it as a custom goal.
+            </p>
+            <Button onClick={handleCustomGoalTap}>Search real places</Button>
+          </div>
         ) : (
           filteredRoutes.map((route) => {
             const userRoute = userRouteFor(route.id);
@@ -286,7 +294,12 @@ export default function RoutesPage() {
       </div>
 
       <Modal open={customGoalOpen} onClose={() => setCustomGoalOpen(false)}>
-        <CustomGoalForm units={units} onSubmit={handleCreateCustomGoal} onCancel={() => setCustomGoalOpen(false)} />
+        <CustomGoalForm
+          units={units}
+          initialStartQuery={search}
+          onSubmit={handleCreateCustomGoal}
+          onCancel={() => setCustomGoalOpen(false)}
+        />
       </Modal>
 
       <Modal open={!!upgradeReason} onClose={() => setUpgradeReason(null)}>
@@ -303,8 +316,8 @@ export default function RoutesPage() {
 }
 
 /** Debounced Mapbox place search for a single input -- shared by the start/end fields below. */
-function usePlaceSearch() {
-  const [query, setQuery] = useState("");
+function usePlaceSearch(initialQuery = "") {
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [selected, setSelected] = useState<GeocodeResult | null>(null);
   const [searching, setSearching] = useState(false);
@@ -377,16 +390,18 @@ function PlaceSearchField({
 
 function CustomGoalForm({
   units,
+  initialStartQuery,
   onSubmit,
   onCancel,
 }: {
   units: UnitsPreference;
+  initialStartQuery?: string;
   onSubmit: (goal: { name: string; distanceM: number; geojson: GeoJSON.LineString | null }) => void;
   onCancel: () => void;
 }) {
   const [mode, setMode] = useState<"search" | "manual">("search");
 
-  const start = usePlaceSearch();
+  const start = usePlaceSearch(initialStartQuery);
   const end = usePlaceSearch();
   const searchDistanceM =
     start.selected && end.selected ? haversineDistanceM(start.selected.center, end.selected.center) : null;
