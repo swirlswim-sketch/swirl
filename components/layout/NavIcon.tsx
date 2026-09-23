@@ -29,7 +29,7 @@ export function NavIcon({ label, className }: NavIconProps) {
           <path d="M15 6.5v13.5" />
         </svg>
       );
-    case "Log":
+    case "Record":
       return (
         <svg {...commonProps} className={className} aria-hidden="true">
           <circle cx="12" cy="12" r="9" />

@@ -19,11 +19,13 @@ export interface LogSwimResult {
 /**
  * Shared by the dashboard and the /log page. A user can have several
  * concurrent active routes (Swirl Pro's "multiple active routes" feature),
- * so this fetches all of them and tracks which one is currently selected
- * for viewing/logging -- exposing a `switchRoute` to change that and a
- * `dropRoute` to abandon one. `logSwim` posts to /api/activities against
- * whichever route is selected (or an explicit id override) and folds the
- * result into local state, so both pages see the same optimistic update.
+ * so this fetches all of them, plus the full route+checkpoint details for
+ * every one of them (not just whichever is "selected") so the dashboard can
+ * render a card per active route. `switchRoute`/`selectedUserRouteId` and
+ * the derived `route`/`checkpoints` remain for the /log page's single-route
+ * switcher view. `logSwim` posts to /api/activities against whichever route
+ * is selected (or an explicit id override) and folds the result into local
+ * state, so both pages see the same optimistic update.
  */
 export function useActiveRoute() {
   const router = useRouter();
@@ -33,15 +35,22 @@ export function useActiveRoute() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activeUserRoutes, setActiveUserRoutes] = useState<UserRoute[]>([]);
   const [selectedUserRouteId, setSelectedUserRouteId] = useState<string | null>(null);
-  const [route, setRoute] = useState<Route | null>(null);
-  const [checkpoints, setCheckpoints] = useState<RouteCheckpoint[]>([]);
-  const [routeNamesById, setRouteNamesById] = useState<Record<string, string>>({});
+  const [routesById, setRoutesById] = useState<Record<string, Route>>({});
+  const [checkpointsByRouteId, setCheckpointsByRouteId] = useState<Record<string, RouteCheckpoint[]>>({});
 
   const userRoute = activeUserRoutes.find((ur) => ur.id === selectedUserRouteId) ?? null;
 
+  function routeFor(ur: UserRoute): Route | null {
+    return ur.route_id ? (routesById[ur.route_id] ?? null) : null;
+  }
+
+  function checkpointsFor(ur: UserRoute): RouteCheckpoint[] {
+    return ur.route_id ? (checkpointsByRouteId[ur.route_id] ?? []) : [];
+  }
+
   /** Display name for any active user_route, not just the selected one -- used by the route switcher. */
   function nameFor(ur: UserRoute): string {
-    return (ur.route_id ? routeNamesById[ur.route_id] : ur.custom_name) ?? "Custom goal";
+    return routeFor(ur)?.name ?? ur.custom_name ?? "Custom goal";
   }
 
   const loadData = useCallback(async () => {
@@ -70,8 +79,19 @@ export function useActiveRoute() {
 
     const routeIds = Array.from(new Set(routes.map((ur) => ur.route_id).filter((id): id is string => !!id)));
     if (routeIds.length > 0) {
-      const { data: namedRoutes } = await supabase.from("routes").select("id,name").in("id", routeIds);
-      setRouteNamesById(Object.fromEntries((namedRoutes ?? []).map((r) => [r.id, r.name])));
+      const [{ data: routesData }, { data: checkpointsData }] = await Promise.all([
+        supabase.from("routes").select("*").in("id", routeIds),
+        supabase.from("route_checkpoints").select("*").in("route_id", routeIds).order("order_index"),
+      ]);
+      setRoutesById(Object.fromEntries((routesData ?? []).map((r) => [r.id, r])));
+      const grouped: Record<string, RouteCheckpoint[]> = {};
+      for (const cp of checkpointsData ?? []) {
+        (grouped[cp.route_id] ??= []).push(cp);
+      }
+      setCheckpointsByRouteId(grouped);
+    } else {
+      setRoutesById({});
+      setCheckpointsByRouteId({});
     }
 
     setLoading(false);
@@ -82,26 +102,8 @@ export function useActiveRoute() {
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (!userRoute?.route_id) {
-      setRoute(null);
-      setCheckpoints([]);
-      return;
-    }
-    let cancelled = false;
-    Promise.all([
-      supabase.from("routes").select("*").eq("id", userRoute.route_id).single(),
-      supabase.from("route_checkpoints").select("*").eq("route_id", userRoute.route_id).order("order_index"),
-    ]).then(([{ data: routeData }, { data: checkpointData }]) => {
-      if (cancelled) return;
-      setRoute(routeData ?? null);
-      setCheckpoints(checkpointData ?? []);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRoute?.route_id]);
+  const route = userRoute ? routeFor(userRoute) : null;
+  const checkpoints = userRoute ? checkpointsFor(userRoute) : [];
 
   function switchRoute(userRouteId: string) {
     setSelectedUserRouteId(userRouteId);
@@ -135,22 +137,17 @@ export function useActiveRoute() {
       throw new Error(result.error ?? "Couldn't log that swim");
     }
 
-    setActiveUserRoutes((prev) =>
-      prev.map((ur) =>
-        ur.id === targetId
-          ? {
-              ...ur,
-              current_distance_m: result.newDistanceM,
-              ...(result.routeCompleted ? { completed_at: new Date().toISOString(), is_active: false } : {}),
-            }
-          : ur
-      )
-    );
-    if (result.routeCompleted && targetId) {
-      setSelectedUserRouteId((current) =>
-        current === targetId ? (activeUserRoutes.find((ur) => ur.id !== targetId)?.id ?? null) : current
-      );
-    }
+    setActiveUserRoutes((prev) => {
+      if (result.routeCompleted) {
+        // Drop it from the active list, same as dropRoute -- a completed
+        // route shouldn't keep showing under "Active routes" with a
+        // still-live "Log a swim" button.
+        const next = prev.filter((ur) => ur.id !== targetId);
+        setSelectedUserRouteId((current) => (current === targetId ? (next[0]?.id ?? null) : current));
+        return next;
+      }
+      return prev.map((ur) => (ur.id === targetId ? { ...ur, current_distance_m: result.newDistanceM } : ur));
+    });
     setProfile((prev) =>
       prev
         ? {
@@ -175,6 +172,8 @@ export function useActiveRoute() {
     switchRoute,
     dropRoute,
     nameFor,
+    routeFor,
+    checkpointsFor,
     route,
     checkpoints,
     logSwim,
