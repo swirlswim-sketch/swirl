@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import clsx from "clsx";
 import { formatDistance } from "@/lib/units";
 import { getMilestoneCopy, pickHeadlineBadge } from "@/lib/copy";
 import { useActiveRoute } from "@/lib/useActiveRoute";
@@ -26,7 +27,7 @@ interface OverlayState {
 
 export default function LogPage() {
   const router = useRouter();
-  const { loading, profile, userRoute, route, logSwim } = useActiveRoute();
+  const { loading, profile, activeUserRoutes, userRoute, switchRoute, nameFor, route, logSwim } = useActiveRoute();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -96,7 +97,24 @@ export default function LogPage() {
   return (
     <main className="min-h-screen bg-surface px-6 pb-24 pt-10">
       <h1 className="mb-1 font-display text-[22px] font-semibold text-deep">Log a swim</h1>
-      <p className="mb-6 text-[14px] text-slate">{route?.name ?? userRoute.custom_name ?? "Custom goal"}</p>
+      <p className="mb-4 text-[14px] text-slate">{route?.name ?? userRoute.custom_name ?? "Custom goal"}</p>
+
+      {activeUserRoutes.length > 1 && (
+        <div className="-mx-1 mb-6 flex gap-2 overflow-x-auto px-1 pb-1">
+          {activeUserRoutes.map((ur) => (
+            <button
+              key={ur.id}
+              onClick={() => switchRoute(ur.id)}
+              className={clsx(
+                "shrink-0 rounded-pill px-3 py-1.5 text-[12px] font-medium",
+                ur.id === userRoute.id ? "bg-blue text-white" : "bg-white text-slate shadow-card"
+              )}
+            >
+              {nameFor(ur)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <p className="mb-3 text-[14px] text-[#d92d20]">{error}</p>}
       <LogSheet unitsPreference={units} onSubmit={handleLogSwim} submitting={submitting} />

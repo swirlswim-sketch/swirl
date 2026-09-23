@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import clsx from "clsx";
 import { createClient } from "@/lib/supabase";
 import { formatDistance } from "@/lib/units";
 import { getMilestoneCopy, pickHeadlineBadge } from "@/lib/copy";
@@ -36,7 +37,9 @@ interface OverlayState {
 }
 
 export default function DashboardPage() {
-  const { loading, profile, userRoute, route, checkpoints, logSwim } = useActiveRoute();
+  const { loading, profile, activeUserRoutes, userRoute, switchRoute, dropRoute, nameFor, route, checkpoints, logSwim } =
+    useActiveRoute();
+  const [dropping, setDropping] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -180,7 +183,24 @@ export default function DashboardPage() {
         {profile && <Header profile={profile} className="relative z-10" />}
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 top-[65vh] flex flex-col gap-3 overflow-y-auto rounded-t-card bg-white p-6 pb-20 shadow-card md:static md:h-screen md:w-[30%] md:rounded-none md:pb-6 md:shadow-none">
+      <div className="absolute inset-x-0 bottom-0 top-[65vh] flex flex-col gap-3 overflow-y-auto rounded-t-card bg-white p-6 pb-24 pr-24 shadow-card md:static md:h-screen md:w-[30%] md:rounded-none md:pb-6 md:pr-6 md:shadow-none">
+        {activeUserRoutes.length > 1 && (
+          <div className="-mx-1 flex shrink-0 gap-2 overflow-x-auto px-1 pb-1">
+            {activeUserRoutes.map((ur) => (
+              <button
+                key={ur.id}
+                onClick={() => switchRoute(ur.id)}
+                className={clsx(
+                  "shrink-0 rounded-pill px-3 py-1.5 text-[12px] font-medium",
+                  ur.id === userRoute.id ? "bg-blue text-white" : "bg-surface text-slate"
+                )}
+              >
+                {nameFor(ur)}
+              </button>
+            ))}
+          </div>
+        )}
+
         <h2 className="font-display text-[22px] font-semibold text-deep">
           {route?.name ?? userRoute.custom_name ?? "Custom goal"}
         </h2>
@@ -203,6 +223,21 @@ export default function DashboardPage() {
         <Button className="mt-2 hidden md:flex" onClick={() => setSheetOpen(true)}>
           Log a swim
         </Button>
+
+        <button
+          disabled={dropping}
+          onClick={async () => {
+            if (!window.confirm(`Drop ${route?.name ?? userRoute.custom_name ?? "this goal"}? Your progress on it will be lost.`)) {
+              return;
+            }
+            setDropping(true);
+            await dropRoute(userRoute.id);
+            setDropping(false);
+          }}
+          className="mt-1 text-[13px] font-medium text-slate underline-offset-2 hover:underline"
+        >
+          Drop this route
+        </button>
       </div>
 
       <button

@@ -41,14 +41,21 @@ export async function POST(request: Request) {
   const activityType: string = body.activity_type ?? "swim";
   const notes: string | null = body.notes ?? null;
   const loggedDate: string = body.logged_at ?? new Date().toISOString().slice(0, 10);
+  const userRouteId: string | undefined = body.user_route_id;
 
   if (!Number.isFinite(distanceM) || distanceM <= 0) {
     return NextResponse.json({ error: "distance_m must be a positive number" }, { status: 400 });
   }
 
+  // A user can have several concurrent active routes (Swirl Pro), so which
+  // one to log against must be explicit -- falling back to "whichever the
+  // query happens to return first" would silently log against the wrong
+  // route. The old single-active-route behavior (no id passed) is kept as a
+  // fallback for any caller that hasn't been updated to pass one.
+  const userRouteQuery = supabase.from("user_routes").select("*").eq("user_id", user.id).eq("is_active", true);
   const [{ data: profile }, { data: userRoute }, { data: allBadges }] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", user.id).single(),
-    supabase.from("user_routes").select("*").eq("user_id", user.id).eq("is_active", true).limit(1).maybeSingle(),
+    userRouteId ? userRouteQuery.eq("id", userRouteId).maybeSingle() : userRouteQuery.limit(1).maybeSingle(),
     supabase.from("badges").select("*"),
   ]);
 

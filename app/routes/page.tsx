@@ -100,7 +100,11 @@ export default function RoutesPage() {
     } = await supabase.auth.getUser();
     if (!user) return;
 
-    if (activeUserRoute && activeUserRoute.route_id !== route.id) {
+    // Free users are capped at one active route, so starting a new one
+    // (past the zero-progress check above) replaces it. Premium users
+    // aren't capped -- this should add alongside their existing routes,
+    // never silently drop one.
+    if (activeUserRoute && activeUserRoute.route_id !== route.id && !isPremium(profile)) {
       await supabase.from("user_routes").update({ is_active: false }).eq("id", activeUserRoute.id);
     }
 
@@ -140,7 +144,7 @@ export default function RoutesPage() {
       return;
     }
 
-    if (activeUserRoute) {
+    if (activeUserRoute && !isPremium(profile)) {
       await supabase.from("user_routes").update({ is_active: false }).eq("id", activeUserRoute.id);
     }
 

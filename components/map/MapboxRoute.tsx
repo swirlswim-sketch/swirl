@@ -71,6 +71,7 @@ export default function MapboxRoute({
   const animationFrameRef = useRef<number | null>(null);
   const hasCenteredOnUserRef = useRef(false);
   const loadedRef = useRef(false);
+  const currentRouteIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -181,6 +182,34 @@ export default function MapboxRoute({
     }
   }
 
+  // Called when the selected route changes (e.g. switching between a premium
+  // user's several active routes) rather than on the initial load, since
+  // syncBounds() intentionally no-ops once a user position is being tracked.
+  // Without this the camera stays parked on the previously-selected route's
+  // line, which can leave the newly-selected route entirely off-screen.
+  function recenterOnRoute() {
+    const map = mapRef.current;
+    const line = selectedLine();
+    if (!map || !loadedRef.current || !line || userPositionFraction == null) return;
+
+    // A route switch can briefly race with the previous route's position
+    // animation (its `route` detail fetch resolves a render late, so
+    // syncUserMarker can kick off one last animation step using the old
+    // line just before this runs). Cancel it so its eventual completion
+    // doesn't panTo the marker back to the old route after we've flown here.
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+
+    const pos = positionAlongLine(line.coordinates as [number, number][], userPositionFraction);
+    map.flyTo({ center: pos, zoom: USER_POSITION_ZOOM, duration: 1200, essential: true });
+    if (userMarkerRef.current) {
+      userMarkerRef.current.marker.setLngLat(pos);
+    }
+    displayedFractionRef.current = userPositionFraction;
+  }
+
   function syncMarkers() {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
@@ -264,7 +293,13 @@ export default function MapboxRoute({
 
   useEffect(() => {
     syncStyle();
-    syncBounds();
+    const routeChanged = currentRouteIdRef.current !== null && currentRouteIdRef.current !== selectedRouteId;
+    currentRouteIdRef.current = selectedRouteId;
+    if (routeChanged && userPositionFraction != null) {
+      recenterOnRoute();
+    } else {
+      syncBounds();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRouteId, tight]);
 
