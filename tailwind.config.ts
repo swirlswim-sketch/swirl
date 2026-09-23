@@ -9,13 +9,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        blue: "var(--color-blue)",
-        deep: "var(--color-deep)",
-        surface: "var(--color-surface)",
-        mist: "var(--color-mist)",
-        slate: "var(--color-slate)",
-        gold: "var(--color-gold)",
-        success: "var(--color-success)",
+        blue: "rgb(var(--color-blue) / <alpha-value>)",
+        deep: "rgb(var(--color-deep) / <alpha-value>)",
+        surface: "rgb(var(--color-surface) / <alpha-value>)",
+        mist: "rgb(var(--color-mist) / <alpha-value>)",
+        slate: "rgb(var(--color-slate) / <alpha-value>)",
+        gold: "rgb(var(--color-gold) / <alpha-value>)",
+        success: "rgb(var(--color-success) / <alpha-value>)",
       },
       fontFamily: {
         display: ["var(--font-display)"],

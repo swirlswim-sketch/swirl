@@ -5,14 +5,16 @@
 @tailwind utilities;
 
 :root {
-  --color-blue: #0057ff;
-  --color-deep: #0a0f1e;
-  --color-white: #ffffff;
-  --color-surface: #f5f7fa;
-  --color-mist: #e2e8f2;
-  --color-slate: #6b7a99;
-  --color-gold: #f5a623;
-  --color-success: #22c77a;
+  /* RGB channels (not hex) so Tailwind's bg-deep/40 etc. opacity modifiers
+     can wrap these in rgb(... / <alpha-value>) -- see tailwind.config.ts. */
+  --color-blue: 0 87 255;
+  --color-deep: 10 15 30;
+  --color-white: 255 255 255;
+  --color-surface: 245 247 250;
+  --color-mist: 226 232 242;
+  --color-slate: 107 122 153;
+  --color-gold: 245 166 35;
+  --color-success: 34 199 122;
 
   --font-display: 'Unbounded', sans-serif;
   --font-body: 'Manrope', sans-serif;
@@ -24,8 +26,8 @@
 
 html,
 body {
-  background: var(--color-surface);
-  color: var(--color-deep);
+  background: rgb(var(--color-surface));
+  color: rgb(var(--color-deep));
 }
 
 body {
