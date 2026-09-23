@@ -12,6 +12,9 @@ import Button from "@/components/ui/Button";
 import ActivityCard from "@/components/activity/ActivityCard";
 import type { ActivityLog, Badge as BadgeType, Profile, UnitsPreference, UserBadge } from "@/types/database";
 
+// See app/dashboard/page.tsx for why this is needed.
+export const dynamic = "force-dynamic";
+
 const LOGS_PAGE_SIZE = 10;
 
 const CONNECTED_APPS = [

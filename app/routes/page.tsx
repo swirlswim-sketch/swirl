@@ -11,6 +11,9 @@ import Modal from "@/components/ui/Modal";
 import ProgressBar from "@/components/ui/ProgressBar";
 import type { Profile, Route, UserRoute } from "@/types/database";
 
+// See app/dashboard/page.tsx for why this is needed.
+export const dynamic = "force-dynamic";
+
 const ACTIVITY_FILTERS = [
   { value: "all", label: "All" },
   { value: "swim", label: "Swim" },

@@ -14,6 +14,12 @@ import Toast from "@/components/ui/Toast";
 import MilestoneOverlay from "@/components/ui/MilestoneOverlay";
 import Button from "@/components/ui/Button";
 
+// Always behind auth, never worth statically prerendering -- and without
+// this, Next.js tries to prerender it at build time, which runs this
+// client component's top-level createClient() call with no env vars
+// available and crashes the build.
+export const dynamic = "force-dynamic";
+
 interface ToastState {
   variant: "small" | "medium";
   message: string;

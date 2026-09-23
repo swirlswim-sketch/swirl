@@ -9,6 +9,9 @@ import { isPremium, requiresPremium } from "@/lib/premium";
 import Avatar from "@/components/ui/Avatar";
 import type { Profile, UnitsPreference } from "@/types/database";
 
+// See app/dashboard/page.tsx for why this is needed.
+export const dynamic = "force-dynamic";
+
 type Tab = "global" | "friends";
 type Period = "all" | "week";
 

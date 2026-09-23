@@ -10,6 +10,9 @@ import LogSheet, { type LogSheetSubmission } from "@/components/activity/LogShee
 import Toast from "@/components/ui/Toast";
 import MilestoneOverlay from "@/components/ui/MilestoneOverlay";
 
+// See app/dashboard/page.tsx for why this is needed.
+export const dynamic = "force-dynamic";
+
 interface ToastState {
   variant: "small" | "medium";
   message: string;

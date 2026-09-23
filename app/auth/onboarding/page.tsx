@@ -9,6 +9,9 @@ import Button from "@/components/ui/Button";
 import MapboxRoute from "@/components/map/MapboxRoute";
 import type { Badge, Route, RouteCheckpoint } from "@/types/database";
 
+// See app/dashboard/page.tsx for why this is needed.
+export const dynamic = "force-dynamic";
+
 const PENDING_ROUTE_KEY = "swirl_pending_route";
 
 const DIFFICULTY_LABEL: Record<string, string> = {
