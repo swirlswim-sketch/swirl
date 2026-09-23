@@ -27,6 +27,52 @@ export function routePreviewImageUrl(
   return `https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/${overlay}/auto/${width}x${height}@2x?padding=30&access_token=${MAPBOX_TOKEN}`;
 }
 
+export interface GeocodeResult {
+  id: string;
+  /** Short label for display, e.g. "Loch Lomond" rather than the full "Loch Lomond, Argyll and Bute, Scotland". */
+  shortName: string;
+  placeName: string;
+  center: [number, number];
+}
+
+/** Searches real-world places by name via Mapbox's Geocoding API, for premium users building a custom route. */
+export async function searchPlaces(query: string): Promise<GeocodeResult[]> {
+  if (!query.trim()) return [];
+
+  // No `types` filter: swim spots are often indexed as POIs or natural
+  // features, and the Geocoding v5 API's `types` param only accepts
+  // administrative types (country/region/place/district/locality/postcode/
+  // neighborhood/address) -- "poi" and "water" are both rejected with a 422,
+  // so restricting types would filter out exactly the results we want.
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_TOKEN}&limit=5`;
+  const res = await fetch(url);
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  return (data.features ?? []).map((f: { id: string; text: string; place_name: string; center: [number, number] }) => ({
+    id: f.id,
+    shortName: f.text,
+    placeName: f.place_name,
+    center: f.center,
+  }));
+}
+
+/** Great-circle distance between two [lng, lat] points, in metres. */
+export function haversineDistanceM(a: [number, number], b: [number, number]): number {
+  const R = 6_371_000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const sinHalfDLat = Math.sin(dLat / 2);
+  const sinHalfDLng = Math.sin(dLng / 2);
+  const h = sinHalfDLat ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * sinHalfDLng ** 2;
+
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 /** Fraction (0-1) of the way along a route's coordinate list at a given distance. */
 export function distanceFractionAlongRoute(distanceM: number, totalDistanceM: number): number {
   if (totalDistanceM <= 0) return 0;

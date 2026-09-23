@@ -55,6 +55,7 @@ export type UserRoute = {
   route_id: string | null;
   custom_name: string | null;
   custom_distance_m: number | null;
+  custom_geojson: GeoJSON.Geometry | null;
   started_at: string;
   completed_at: string | null;
   current_distance_m: number;

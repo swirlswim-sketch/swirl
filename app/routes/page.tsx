@@ -6,11 +6,12 @@ import clsx from "clsx";
 import { createClient } from "@/lib/supabase";
 import { formatDistance } from "@/lib/units";
 import { isPremium, requiresPremium } from "@/lib/premium";
-import { routePreviewImageUrl } from "@/lib/mapbox";
+import { routePreviewImageUrl, searchPlaces, haversineDistanceM, type GeocodeResult } from "@/lib/mapbox";
+import { displayDistanceToMetres } from "@/lib/units";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import ProgressBar from "@/components/ui/ProgressBar";
-import type { Profile, Route, UserRoute } from "@/types/database";
+import type { Profile, Route, UserRoute, UnitsPreference } from "@/types/database";
 
 // See app/dashboard/page.tsx for why this is needed.
 export const dynamic = "force-dynamic";
@@ -127,7 +128,7 @@ export default function RoutesPage() {
     setCustomGoalOpen(true);
   }
 
-  async function handleCreateCustomGoal(name: string, distanceKm: number) {
+  async function handleCreateCustomGoal(goal: { name: string; distanceM: number; geojson: GeoJSON.LineString | null }) {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -146,8 +147,9 @@ export default function RoutesPage() {
     const { error: insertError } = await supabase.from("user_routes").insert({
       user_id: user.id,
       route_id: null,
-      custom_name: name,
-      custom_distance_m: distanceKm * 1000,
+      custom_name: goal.name,
+      custom_distance_m: goal.distanceM,
+      custom_geojson: goal.geojson,
       current_distance_m: 0,
       is_active: true,
     });
@@ -280,7 +282,7 @@ export default function RoutesPage() {
       </div>
 
       <Modal open={customGoalOpen} onClose={() => setCustomGoalOpen(false)}>
-        <CustomGoalForm onSubmit={handleCreateCustomGoal} onCancel={() => setCustomGoalOpen(false)} />
+        <CustomGoalForm units={units} onSubmit={handleCreateCustomGoal} onCancel={() => setCustomGoalOpen(false)} />
       </Modal>
 
       <Modal open={!!upgradeReason} onClose={() => setUpgradeReason(null)}>
@@ -296,56 +298,187 @@ export default function RoutesPage() {
   );
 }
 
+/** Debounced Mapbox place search for a single input -- shared by the start/end fields below. */
+function usePlaceSearch() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<GeocodeResult[]>([]);
+  const [selected, setSelected] = useState<GeocodeResult | null>(null);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (selected && selected.placeName === query) return;
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(async () => {
+      const found = await searchPlaces(query);
+      setResults(found);
+      setSearching(false);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query, selected]);
+
+  function select(result: GeocodeResult) {
+    setSelected(result);
+    setQuery(result.placeName);
+    setResults([]);
+  }
+
+  function change(value: string) {
+    setQuery(value);
+    if (selected) setSelected(null);
+  }
+
+  return { query, results, selected, searching, change, select };
+}
+
+function PlaceSearchField({
+  label,
+  placeholder,
+  search,
+}: {
+  label: string;
+  placeholder: string;
+  search: ReturnType<typeof usePlaceSearch>;
+}) {
+  return (
+    <label className="relative flex flex-col gap-1">
+      <span className="text-[12px] font-medium text-slate">{label}</span>
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={search.query}
+        onChange={(e) => search.change(e.target.value)}
+        className="rounded-card border border-mist bg-white px-4 py-3 text-[16px] text-deep placeholder:text-slate focus:border-blue focus:outline-none"
+      />
+      {search.results.length > 0 && (
+        <div className="absolute top-full z-10 mt-1 w-full overflow-hidden rounded-card bg-white shadow-card">
+          {search.results.map((result) => (
+            <button
+              key={result.id}
+              type="button"
+              onClick={() => search.select(result)}
+              className="block w-full px-4 py-2.5 text-left text-[14px] text-deep hover:bg-surface"
+            >
+              {result.placeName}
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
 function CustomGoalForm({
+  units,
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (name: string, distanceKm: number) => void;
+  units: UnitsPreference;
+  onSubmit: (goal: { name: string; distanceM: number; geojson: GeoJSON.LineString | null }) => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [distance, setDistance] = useState("");
+  const [mode, setMode] = useState<"search" | "manual">("search");
 
-  const distanceValue = parseFloat(distance);
-  const canSubmit = name.trim().length > 0 && Number.isFinite(distanceValue) && distanceValue > 0;
+  const start = usePlaceSearch();
+  const end = usePlaceSearch();
+  const searchDistanceM =
+    start.selected && end.selected ? haversineDistanceM(start.selected.center, end.selected.center) : null;
+
+  const [manualName, setManualName] = useState("");
+  const [manualDistance, setManualDistance] = useState("");
+  const manualDistanceValue = parseFloat(manualDistance);
+  const canSubmitManual =
+    manualName.trim().length > 0 && Number.isFinite(manualDistanceValue) && manualDistanceValue > 0;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (mode === "search") {
+      if (!start.selected || !end.selected || !searchDistanceM) return;
+      onSubmit({
+        name: `${start.selected.shortName} to ${end.selected.shortName}`,
+        distanceM: searchDistanceM,
+        geojson: { type: "LineString", coordinates: [start.selected.center, end.selected.center] },
+      });
+    } else {
+      if (!canSubmitManual) return;
+      onSubmit({
+        name: manualName.trim(),
+        distanceM: displayDistanceToMetres(manualDistanceValue, units),
+        geojson: null,
+      });
+    }
+  }
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (canSubmit) onSubmit(name.trim(), distanceValue);
-      }}
-      className="flex flex-col gap-4"
-    >
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <h3 className="font-display text-[20px] font-semibold text-deep">Custom goal</h3>
-      <label className="flex flex-col gap-1">
-        <span className="text-[12px] font-medium text-slate">Goal name</span>
-        <input
-          type="text"
-          placeholder="e.g. Around the lake"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="rounded-card border border-mist bg-white px-4 py-3 text-[16px] text-deep placeholder:text-slate focus:border-blue focus:outline-none"
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="text-[12px] font-medium text-slate">Distance (km)</span>
-        <input
-          type="number"
-          inputMode="decimal"
-          min="0"
-          step="0.1"
-          placeholder="10"
-          value={distance}
-          onChange={(e) => setDistance(e.target.value)}
-          className="rounded-card border border-mist bg-white px-4 py-3 text-[16px] text-deep placeholder:text-slate focus:border-blue focus:outline-none"
-        />
-      </label>
+
+      <div className="flex rounded-pill bg-surface p-1">
+        {(["search", "manual"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={clsx(
+              "flex-1 rounded-pill py-2 text-[13px] font-medium",
+              mode === m ? "bg-white text-deep shadow-card" : "text-slate"
+            )}
+          >
+            {m === "search" ? "Search a route" : "Set a distance"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "search" ? (
+        <>
+          <PlaceSearchField label="Start" placeholder="e.g. Loch Lomond" search={start} />
+          <PlaceSearchField label="Finish" placeholder="e.g. Balloch" search={end} />
+          {searchDistanceM != null && (
+            <p className="text-[13px] text-slate">
+              Straight-line distance: <span className="font-semibold text-deep">{formatDistance(searchDistanceM, units)}</span>
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] font-medium text-slate">Goal name</span>
+            <input
+              type="text"
+              placeholder="e.g. Around the lake"
+              value={manualName}
+              onChange={(e) => setManualName(e.target.value)}
+              className="rounded-card border border-mist bg-white px-4 py-3 text-[16px] text-deep placeholder:text-slate focus:border-blue focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] font-medium text-slate">Distance ({units})</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.1"
+              placeholder="10"
+              value={manualDistance}
+              onChange={(e) => setManualDistance(e.target.value)}
+              className="rounded-card border border-mist bg-white px-4 py-3 text-[16px] text-deep placeholder:text-slate focus:border-blue focus:outline-none"
+            />
+          </label>
+        </>
+      )}
+
       <div className="flex gap-3">
         <Button type="button" variant="secondary" fullWidth onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" fullWidth disabled={!canSubmit}>
+        <Button
+          type="submit"
+          fullWidth
+          disabled={mode === "search" ? !searchDistanceM : !canSubmitManual}
+        >
           Create goal
         </Button>
       </div>

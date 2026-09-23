@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase";
 import { formatDistance } from "@/lib/units";
 import { getMilestoneCopy, pickHeadlineBadge } from "@/lib/copy";
 import { useActiveRoute } from "@/lib/useActiveRoute";
@@ -13,6 +14,9 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import Toast from "@/components/ui/Toast";
 import MilestoneOverlay from "@/components/ui/MilestoneOverlay";
 import Button from "@/components/ui/Button";
+import Avatar from "@/components/ui/Avatar";
+import BadgeTile from "@/components/ui/Badge";
+import type { Badge } from "@/types/database";
 
 // Always behind auth, never worth statically prerendering -- and without
 // this, Next.js tries to prerender it at build time, which runs this
@@ -38,6 +42,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [overlay, setOverlay] = useState<OverlayState | null>(null);
+  const [allBadges, setAllBadges] = useState<Badge[]>([]);
+  const [earnedBadgeIds, setEarnedBadgeIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!toast || toast.variant !== "small") return;
@@ -45,11 +51,28 @@ export default function DashboardPage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // Only needed for the no-active-route empty state below, so fetched lazily
+  // once we know that's the state we're in (not on every dashboard load).
+  useEffect(() => {
+    if (loading || userRoute || !profile) return;
+    const supabase = createClient();
+    Promise.all([
+      supabase.from("badges").select("*"),
+      supabase.from("user_badges").select("badge_id").eq("user_id", profile.id),
+    ]).then(([{ data: badges }, { data: userBadges }]) => {
+      setAllBadges(badges ?? []);
+      setEarnedBadgeIds(new Set((userBadges ?? []).map((b) => b.badge_id)));
+    });
+  }, [loading, userRoute, profile]);
+
   const currentDistanceM = userRoute?.current_distance_m ?? 0;
   const totalDistanceM = route?.total_distance_m ?? userRoute?.custom_distance_m ?? 0;
   const fraction = totalDistanceM > 0 ? Math.min(currentDistanceM / totalDistanceM, 1) : 0;
   const nextCheckpoint = checkpoints.find((cp) => cp.distance_from_start_m > currentDistanceM);
   const units = profile?.units_preference ?? "km";
+  // Custom goals built via location search carry their own line; real routes use their own geojson column.
+  const displayGeojson = route?.geojson ?? userRoute?.custom_geojson ?? null;
+  const displayRouteId = route?.id ?? userRoute?.id ?? null;
 
   async function handleLogSwim(data: LogSheetSubmission) {
     setSubmitting(true);
@@ -93,14 +116,51 @@ export default function DashboardPage() {
   }
 
   if (!userRoute) {
+    const earnedCount = earnedBadgeIds.size;
+    const hasHistory = earnedCount > 0 || (profile?.xp ?? 0) > 0;
+
     return (
-      <main className="flex h-screen flex-col items-center justify-center gap-4 bg-surface px-6 text-center">
-        <h1 className="font-display text-[24px] font-semibold text-deep">
-          {"Pick somewhere. We'll help you get there."}
-        </h1>
+      <main className="flex min-h-screen flex-col items-center gap-6 bg-surface px-6 pb-24 pt-14 text-center">
+        <Avatar displayName={profile?.display_name ?? null} avatarUrl={profile?.avatar_url ?? null} size={72} />
+
+        <div>
+          <p className="text-[15px] text-slate">
+            {hasHistory ? `Welcome back, ${profile?.display_name ?? "swimmer"}` : `Hey ${profile?.display_name ?? "there"}`}
+          </p>
+          <h1 className="mt-1 font-display text-[24px] font-semibold text-deep">
+            {"Pick somewhere. We'll help you get there."}
+          </h1>
+        </div>
+
+        {hasHistory && profile && (
+          <div className="flex gap-10">
+            <div>
+              <p className="font-display text-[22px] font-bold text-deep">{profile.xp.toLocaleString()}</p>
+              <p className="text-[11px] font-medium text-slate">XP</p>
+            </div>
+            <div>
+              <p className="font-display text-[22px] font-bold text-deep">{earnedCount}</p>
+              <p className="text-[11px] font-medium text-slate">Badges</p>
+            </div>
+          </div>
+        )}
+
         <Link href="/routes" className="rounded-pill bg-blue px-6 py-3 text-[15px] font-semibold text-white">
           Browse routes
         </Link>
+
+        {allBadges.length > 0 && (
+          <div className="mt-2 w-full max-w-sm">
+            <p className="mb-3 text-[13px] font-medium text-slate">
+              {hasHistory ? "Your badges" : "Badges waiting for you"}
+            </p>
+            <div className="grid grid-cols-4 gap-4">
+              {allBadges.slice(0, 8).map((badge) => (
+                <BadgeTile key={badge.id} name={badge.name} earned={earnedBadgeIds.has(badge.id)} />
+              ))}
+            </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -109,8 +169,8 @@ export default function DashboardPage() {
     <main className="relative h-screen overflow-hidden bg-deep md:flex">
       <div className="absolute inset-x-0 top-0 h-[65vh] md:static md:h-screen md:w-[70%]">
         <MapboxRoute
-          routes={route ? [{ id: route.id, geojson: route.geojson }] : []}
-          selectedRouteId={route?.id ?? null}
+          routes={displayGeojson && displayRouteId ? [{ id: displayRouteId, geojson: displayGeojson }] : []}
+          selectedRouteId={displayRouteId}
           checkpoints={checkpoints}
           currentDistanceM={currentDistanceM}
           userPositionFraction={fraction}
@@ -136,9 +196,9 @@ export default function DashboardPage() {
             Next: {nextCheckpoint.name} ·{" "}
             {formatDistance(nextCheckpoint.distance_from_start_m - currentDistanceM, units)} to go
           </p>
-        ) : (
+        ) : fraction >= 1 ? (
           <p className="text-[13px] text-slate">Route complete.</p>
-        )}
+        ) : null}
 
         <Button className="mt-2 hidden md:flex" onClick={() => setSheetOpen(true)}>
           Log a swim
