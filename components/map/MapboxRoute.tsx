@@ -81,7 +81,6 @@ export default function MapboxRoute({
       style: MAPBOX_STYLE,
       bounds: DEFAULT_BOUNDS,
       attributionControl: false,
-      interactive: false,
     });
     mapRef.current = map;
 

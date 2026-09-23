@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { createClient } from "@/lib/supabase";
 import { formatDistance } from "@/lib/units";
 import { isPremium, requiresPremium } from "@/lib/premium";
+import { routePreviewImageUrl } from "@/lib/mapbox";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import ProgressBar from "@/components/ui/ProgressBar";
@@ -76,14 +77,18 @@ export default function RoutesPage() {
     return forRoute.find((ur) => ur.is_active) ?? forRoute.find((ur) => ur.completed_at) ?? null;
   }
 
-  const hasActiveRoute = userRoutes.some((ur) => ur.is_active);
+  // A route with zero distance logged isn't really "using up" the free
+  // tier's one-active-route slot -- only gate switching once there's actual
+  // progress that would be lost.
+  const activeUserRoute = userRoutes.find((ur) => ur.is_active) ?? null;
+  const hasActiveProgress = !!activeUserRoute && activeUserRoute.current_distance_m > 0;
   const units = profile?.units_preference ?? "km";
 
   async function handleStartRoute(route: Route) {
     if (!profile) return;
     setError(null);
 
-    if (hasActiveRoute && requiresPremium("multiple_active_routes") && !isPremium(profile)) {
+    if (hasActiveProgress && requiresPremium("multiple_active_routes") && !isPremium(profile)) {
       setUpgradeReason("Finish or drop your current route to start a new one on the free plan.");
       return;
     }
@@ -93,6 +98,10 @@ export default function RoutesPage() {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return;
+
+    if (activeUserRoute && activeUserRoute.route_id !== route.id) {
+      await supabase.from("user_routes").update({ is_active: false }).eq("id", activeUserRoute.id);
+    }
 
     const { error: insertError } = await supabase.from("user_routes").insert({
       user_id: user.id,
@@ -124,10 +133,14 @@ export default function RoutesPage() {
     } = await supabase.auth.getUser();
     if (!user || !profile) return;
 
-    if (hasActiveRoute && requiresPremium("multiple_active_routes") && !isPremium(profile)) {
+    if (hasActiveProgress && requiresPremium("multiple_active_routes") && !isPremium(profile)) {
       setCustomGoalOpen(false);
       setUpgradeReason("Finish or drop your current route to start a new one on the free plan.");
       return;
+    }
+
+    if (activeUserRoute) {
+      await supabase.from("user_routes").update({ is_active: false }).eq("id", activeUserRoute.id);
     }
 
     const { error: insertError } = await supabase.from("user_routes").insert({
@@ -221,10 +234,16 @@ export default function RoutesPage() {
               userRoute && route.total_distance_m > 0
                 ? Math.min(userRoute.current_distance_m / route.total_distance_m, 1)
                 : 0;
+            const previewUrl = routePreviewImageUrl(route.geojson);
 
             return (
               <div key={route.id} className="overflow-hidden rounded-card bg-white shadow-card">
-                <div className="h-32 w-full" style={{ background: "linear-gradient(135deg, #0057FF, #14B8A6)" }} />
+                {previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={previewUrl} alt="" className="h-32 w-full bg-deep object-cover" />
+                ) : (
+                  <div className="h-32 w-full" style={{ background: "linear-gradient(135deg, #0057FF, #14B8A6)" }} />
+                )}
                 <div className="flex flex-col gap-2 p-5">
                   <h3 className="font-display text-[16px] font-semibold text-deep">{route.name}</h3>
                   <div className="flex items-center gap-2 text-[12px] font-medium text-slate">

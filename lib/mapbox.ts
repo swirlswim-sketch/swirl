@@ -4,6 +4,29 @@ export const MAPBOX_STYLE = "mapbox://styles/mapbox/dark-v11";
 
 export const SWIRL_BLUE = "#0057FF";
 
+/**
+ * A static preview image of a route's line, via Mapbox's Static Images API
+ * (no client-side map instance needed -- just an <img src>). Used for route
+ * cards instead of a flat placeholder gradient. Returns null when the route
+ * has no line geometry to draw.
+ */
+export function routePreviewImageUrl(
+  geojson: GeoJSON.Geometry | null,
+  width = 600,
+  height = 300
+): string | null {
+  if (!geojson || geojson.type !== "LineString") return null;
+
+  const feature = {
+    type: "Feature",
+    properties: { stroke: SWIRL_BLUE, "stroke-width": 4, "stroke-opacity": 1 },
+    geometry: geojson,
+  };
+  const overlay = `geojson(${encodeURIComponent(JSON.stringify(feature))})`;
+
+  return `https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/${overlay}/auto/${width}x${height}@2x?padding=30&access_token=${MAPBOX_TOKEN}`;
+}
+
 /** Fraction (0-1) of the way along a route's coordinate list at a given distance. */
 export function distanceFractionAlongRoute(distanceM: number, totalDistanceM: number): number {
   if (totalDistanceM <= 0) return 0;
